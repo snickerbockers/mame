@@ -269,8 +269,51 @@ int data_type_of(int n)
 }
 #endif
 
+static bool do_patch(offs_t A, uint32_t *val) {
+	uint32_t trans = A & ~0xe0000000;
+	if (trans >= 0x00800000 && trans <= 0x009fffff) {
+		trans &= 0x001fffff;
+		switch (trans) {
+		case 0x0000005c:
+			*val = 1;
+			return true;
+		case 0x00000284:
+			*val = 0x00800000;
+			return true;
+		case 0x00000288:
+			*val = 0x00800004;
+			return true;
+		case 0x000002e4:
+			*val = 0x00800008;
+			return true;
+		case 0x000002e8:
+			*val = 0x0080000c;
+			return true;
+		case 0x00000104:
+			*val = 0x00800010;
+			return true;
+		case 0x00000164:
+			*val = 0x00800014;
+			return true;
+		case 0x00000224:
+			*val = 0x00800018;
+			return true;
+		case 0x000001c4:
+			*val = 0x0080001c;
+			return true;
+		default:
+			return false;
+		}
+	}
+	return false;
+}
+
 inline uint8_t sh34_base_device::RB(offs_t A)
 {
+	uint32_t tmp;
+	if (do_patch(A, &tmp))
+		return (uint8_t)tmp;
+
 	if (A >= 0xe0000000)
 		return m_program->read_byte(A);
 
@@ -294,6 +337,10 @@ inline uint8_t sh34_base_device::RB(offs_t A)
 
 inline uint16_t sh34_base_device::RW(offs_t A)
 {
+	uint32_t tmp;
+	if (do_patch(A, &tmp))
+		return (uint16_t)tmp;
+
 	if (A >= 0xe0000000)
 		return m_program->read_word(A);
 
@@ -317,6 +364,10 @@ inline uint16_t sh34_base_device::RW(offs_t A)
 
 inline uint32_t sh34_base_device::RL(offs_t A)
 {
+	uint32_t tmp;
+	if (do_patch(A, &tmp))
+		return tmp;
+
 	if (A >= 0xe0000000)
 		return m_program->read_dword(A);
 

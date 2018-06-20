@@ -694,16 +694,16 @@ WRITE32_MEMBER(dc_state::dc_aica_reg_w)
 		{
 			m_armrst = data & 1;
 
-			if (data & 1)
-			{
-				/* halt the ARM7 */
-				m_soundcpu->set_input_line(INPUT_LINE_RESET, ASSERT_LINE);
-			}
-			else
-			{
-				/* it's alive ! */
-				m_soundcpu->set_input_line(INPUT_LINE_RESET, CLEAR_LINE);
-			}
+			// if (data & 1)
+			// {
+			// 	/* halt the ARM7 */
+			// 	m_soundcpu->set_input_line(INPUT_LINE_RESET, ASSERT_LINE);
+			// }
+			// else
+			// {
+			// 	/* it's alive ! */
+			// 	m_soundcpu->set_input_line(INPUT_LINE_RESET, CLEAR_LINE);
+			// }
 		}
 	}
 
