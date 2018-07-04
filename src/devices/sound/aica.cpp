@@ -18,7 +18,7 @@
 #define SHIFT   12
 #define FIX(v)  ((uint32_t) ((float) (1<<SHIFT)*(v)))
 
-#define EG_SHIFT    16
+#define EG_SHIFT    0
 #define LFO_SHIFT   8
 
 #define LFIX(v) ((unsigned int) ((float) (1<<LFO_SHIFT)*(v)))
@@ -828,11 +828,14 @@ void aica_device::UpdateRegR(address_space &space, int reg)
 					slot->lpend = 0;
 					SGC = (slot->EG.state << 13) & 0x6000;
 					EG = slot->active ? slot->EG.volume : 0;
-					EG >>= (EG_SHIFT - 13);
+					// EG >>= (EG_SHIFT - 13);
 					EG = 0x1FFF - EG;
 					if (EG < 0) EG = 0;
+                    if (EG > 0x3bf) EG = 0x1fff;
+                    // EG = 0x1fff;
+                    // EG = 0x280;
 
-					m_udata.data[0x10/2] = (EG & 0x1FF8) | SGC | LP;
+					m_udata.data[0x10/2] = (EG & 0x1FFF) | SGC | LP;
 				}
 				else
 				{
