@@ -27,7 +27,6 @@
     - F355 Challenge: black screen after Sega logo;
     - Gundam - Side Story 0079: currently hangs at Bandai logo (regression)
     - Idol Janshi wo Tsukucchaou: pixel aspect is way wrong (stretched and offsetted horizontally)
-    - Power Stone: hangs at Capcom logo;
     - Sega GT: no cursor on main menu;
     - Tetris 4D: hangs at BPS FMV (bp 0C0B0C4E)
 
