@@ -59,10 +59,51 @@ public:
 	//  our implementation is not currently tile based, and thus the accumulation buffer is screen sized
 	std::unique_ptr<bitmap_rgb32> fake_accumulationbuffer_bitmap;
 
+	struct color_type_float {
+		unsigned argb[4];
+	};
+
+	struct color_type_int {
+		unsigned argb[4];
+	};
+
+	struct color {
+		/* uint32_t(*pack)(struct color const *); */
+		unsigned argb[4];
+
+		color() {
+			memset(argb, 0, sizeof(argb));
+		}
+
+		color(uint32_t pack32) {
+			argb[0] = (pack32 >> 24) & 0xff;
+			argb[1] = (pack32 >> 16) & 0xff;
+			argb[2] = (pack32 >> 8) & 0xff;
+			argb[3] = (pack32 >> 0) & 0xff;
+		}
+
+		/* union { */
+		/* 	struct color_type_float fpal; */
+		/* 	struct color_type_int pal_int; */
+		/* }; */
+		uint32_t pack(void) {
+			return (uint32_t)((0xff & argb[0]) << 24) |
+				(uint32_t)((0xff & argb[1]) << 16) |
+				(uint32_t)((0xff & argb[2]) << 8)  |
+				(uint32_t)((0xff & argb[3]) << 0);
+		}
+	};
+
+	struct color base_color;
+	struct color last_mode_2_base_color;
+	struct color offset_color;
+
 	struct texinfo  {
 		uint32_t address, vqbase;
-		uint32_t nontextured_pal_int;
-		uint8_t nontextured_fpal_a,nontextured_fpal_r,nontextured_fpal_g,nontextured_fpal_b;
+
+		struct color base_color, offset_color;
+		uint32_t tsinstruction;
+
 		int textured, sizex, sizey, stride, sizes, pf, palette, mode, mipmapped, blend_mode, filter_mode;
 		int coltype;
 
@@ -113,13 +154,14 @@ public:
 	int grabsellast;
 	uint32_t paracontrol,paratype,endofstrip,listtype,global_paratype,parameterconfig;
 	uint32_t groupcontrol,groupen,striplen,userclip;
-	uint32_t objcontrol,shadow,volume,coltype,texture,offfset,gouraud,uv16bit;
+	uint32_t objcontrol,shadow,volume,coltype,texture,offset_color_enable,gouraud,uv16bit;
 	uint32_t texturesizes,textureaddress,scanorder,pixelformat;
 	uint32_t blend_mode, srcselect,dstselect,fogcontrol,colorclamp, use_alpha;
 	uint32_t ignoretexalpha,flipuv,clampuv,filtermode,sstexture,mmdadjust,tsinstruction;
 	uint32_t depthcomparemode,cullingmode,zwritedisable,cachebypass,dcalcctrl,volumeinstruction,mipmapped,vqcompressed,strideselect,paletteselector;
-	uint32_t nontextured_pal_int;
-	float nontextured_fpal_a,nontextured_fpal_r,nontextured_fpal_g,nontextured_fpal_b;
+
+	/* uint32_t nontextured_pal_int; */
+	/* float nontextured_fpal_a,nontextured_fpal_r,nontextured_fpal_g,nontextured_fpal_b; */
 
 	uint64_t *dc_texture_ram;
 	uint64_t *dc_framebuffer_ram;
@@ -428,9 +470,7 @@ private:
 	uint32_t tex_r_p8_8888_tw(texinfo *t, float x, float y);
 	uint32_t tex_r_p8_8888_vq(texinfo *t, float x, float y);
 
-	uint32_t tex_r_nt_palint(texinfo *t, float x, float y);
-	uint32_t tex_r_nt_palfloat(texinfo *t, float x, float y);
-
+	uint32_t tex_r_wtf(texinfo *t, float x, float y);
 	uint32_t tex_r_default(texinfo *t, float x, float y);
 	void tex_get_info(texinfo *t);
 
