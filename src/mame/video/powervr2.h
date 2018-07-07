@@ -370,6 +370,8 @@ private:
 	static inline uint32_t blc(uint32_t c1, uint32_t c2);
 	static inline uint32_t blic(uint32_t c1, uint32_t c2);
 	static inline uint32_t bls(uint32_t c1, uint32_t c2);
+	static inline uint32_t bls24(uint32_t c1, uint32_t c2);
+
 	static uint32_t bl00(uint32_t s, uint32_t d);
 	static uint32_t bl01(uint32_t s, uint32_t d);
 	static uint32_t bl02(uint32_t s, uint32_t d);

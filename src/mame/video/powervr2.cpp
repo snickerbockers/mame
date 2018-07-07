@@ -187,6 +187,26 @@ inline uint32_t powervr2_device::bls(uint32_t c1, uint32_t c2)
 	return cr1|(cr2 << 8);
 }
 
+/*
+ * Add two colors with saturation, not including the alpha channel
+ * The only difference between this function and bls is that bls does not
+ * ignore alpha.  The alpha will be cleared to zero by this instruction
+ */
+inline uint32_t powervr2_device::bls24(uint32_t c1, uint32_t c2)
+{
+	uint32_t cr1, cr2;
+	cr1 = (c1 & 0x00ff00ff) + (c2 & 0x00ff00ff);
+	if(cr1 & 0x0000ff00)
+		cr1 = (cr1 & 0xffff00ff) | 0x000000ff;
+	if(cr1 & 0xff000000)
+		cr1 = (cr1 & 0x00ffffff) | 0x00ff0000;
+
+	cr2 = ((c1 >> 8) & 0x000000ff) + ((c2 >> 8) & 0x000000ff);
+	if(cr2 & 0x0000ff00)
+		cr2 = (cr2 & 0xffff00ff) | 0x000000ff;
+	return cr1|(cr2 << 8);
+}
+
 // All 64 blending modes, 3 top bits are source mode, 3 bottom bits are destination mode
 uint32_t powervr2_device::bl00(uint32_t s, uint32_t d) { return 0; }
 uint32_t powervr2_device::bl01(uint32_t s, uint32_t d) { return d; }
@@ -2377,70 +2397,34 @@ void powervr2_device::render_hline(bitmap_rgb32 &bitmap, texinfo *ti, int y, flo
 
 			if (ti->textured) {
 				struct color sample(c);
-				int col_idx;
-				int tex_alpha, base_alpha;
+				uint32_t tmp;
 				switch (ti->tsinstruction) {
 				case 0:
 					// decal
-					sample.argb[1] += ti->offset_color.argb[1];
-					sample.argb[2] += ti->offset_color.argb[2];
-					sample.argb[3] += ti->offset_color.argb[3];
+					sample =
+						color(bls24(sample.pack(), ti->offset_color.pack()) | (c & 0xff000000));
 					break;
 				case 1:
 					// modulate
-					for (col_idx = 1; col_idx < 4; col_idx++) {
-						int tex_sample = sample.argb[col_idx];
-						int base = ti->base_color.argb[col_idx];
-						int offs = ti->offset_color.argb[col_idx];
-						sample.argb[col_idx] =
-							((tex_sample * base) >> 8) + offs;
-					}
+					tmp = blc(c, ti->base_color.pack());
+					tmp = bls24(tmp, ti->offset_color.pack());
+					tmp |= c & 0xff000000;
+					sample = color(tmp);
 					break;
 				case 2:
 					// decal with alpha
-					tex_alpha = sample.argb[0];
-					for (col_idx = 1; col_idx < 4; col_idx++) {
-						int tex_sample = sample.argb[col_idx];
-						int base = ti->base_color.argb[col_idx];
-						int offs = ti->offset_color.argb[col_idx];
-						int tex_sample_scaled = (tex_sample * tex_alpha) >> 8;
-						int base_scaled = ((255 - tex_alpha) * base) >> 8;
-						sample.argb[col_idx] =
-							(tex_sample_scaled + base_scaled) + offs;
-					}
-					sample.argb[0] = ti->base_color.argb[0];
+					tmp = bls24(blc(c, sample.argb[0]), blic(ti->base_color.pack(), sample.argb[0]));
+					tmp = bls24(tmp, offset_color.pack()) | ti->base_color.argb[0];
+					sample = color(tmp);
 					break;
 				case 3:
 					// modulate with alpha
-					for (col_idx = 1; col_idx < 4; col_idx++) {
-						int tex_sample = sample.argb[col_idx];
-						int base = ti->base_color.argb[col_idx];
-						int offs = ti->offset_color.argb[col_idx];
-						sample.argb[col_idx] =
-							((tex_sample * base) >> 8) + offs;
-					}
-					tex_alpha = sample.argb[0];
-					base_alpha = ti->base_color.argb[0];
-					sample.argb[0] = (tex_alpha * base_alpha) >> 8;
+					tmp = blc(c, ti->base_color.pack());
+					tmp = bls24(tmp, ti->offset_color.pack());
+					tmp |= ((sample.argb[0] * ti->base_color.argb[0]) >> 8) << 24;
+					sample = color(tmp);
 					break;
 				}
-
-				if (sample.argb[0] < 0)
-					sample.argb[0] = 0;
-				if (sample.argb[0] > 255)
-					sample.argb[0] = 255;
-				if (sample.argb[1] < 0)
-					sample.argb[1] = 0;
-				if (sample.argb[1] > 255)
-					sample.argb[1] = 255;
-				if (sample.argb[2] < 0)
-					sample.argb[2] = 0;
-				if (sample.argb[2] > 255)
-					sample.argb[2] = 255;
-				if (sample.argb[3] < 0)
-					sample.argb[3] = 0;
-				if (sample.argb[3] > 255)
-					sample.argb[3] = 255;
 
 				c = sample.pack();
 			}
