@@ -2112,8 +2112,8 @@ void powervr2_device::process_ta_fifo()
 						memcpy(&base_intensity, tafifo_buff + 6, sizeof(float));
 						memcpy(&offs_intensity, tafifo_buff + 7, sizeof(float));
 						for (col_idx = 0; col_idx < 4; col_idx++) {
-							double crap = base_color.argb[col_idx] / 255.0;
-							int col = crap * base_intensity * 255.0;
+							int col = (base_color.argb[col_idx] / 255.0f) *
+								base_intensity * 255.0f;
 							if (col < 0)
 								col = 0;
 							if (col > 255)
@@ -2122,8 +2122,8 @@ void powervr2_device::process_ta_fifo()
 						}
 						if (offset_color_enable) {
 							for (col_idx = 0; col_idx < 4; col_idx++) {
-								double crap = offset_color.argb[col_idx] / 255.0;
-								int col = crap * offs_intensity * 255.0;
+								int col = (offset_color.argb[col_idx] / 255.0f) *
+									offs_intensity * 255.0f;
 								if (col < 0)
 									col = 0;
 								if (col > 255)
@@ -2378,7 +2378,7 @@ void powervr2_device::render_hline(bitmap_rgb32 &bitmap, texinfo *ti, int y, flo
 			if (ti->textured) {
 				struct color sample(c);
 				int col_idx;
-				__attribute__((unused))double tex_alpha, base_alpha;
+				int tex_alpha, base_alpha;
 				switch (ti->tsinstruction) {
 				case 0:
 					// decal
@@ -2389,43 +2389,39 @@ void powervr2_device::render_hline(bitmap_rgb32 &bitmap, texinfo *ti, int y, flo
 				case 1:
 					// modulate
 					for (col_idx = 1; col_idx < 4; col_idx++) {
-						double in1 = sample.argb[col_idx] / 255.0;
-						double in2 = ti->base_color.argb[col_idx] / 255.0;
-						double in3 = ti->offset_color.argb[col_idx] / 255.0;
-						double res_dbl = in1 * in2 + in3;
-						sample.argb[col_idx] = (int)(res_dbl * 255.0);
+						int tex_sample = sample.argb[col_idx];
+						int base = ti->base_color.argb[col_idx];
+						int offs = ti->offset_color.argb[col_idx];
+						sample.argb[col_idx] =
+							((tex_sample * base) >> 8) + offs;
 					}
 					break;
 				case 2:
 					// decal with alpha
-					tex_alpha = sample.argb[0] / 255.0;
+					tex_alpha = sample.argb[0];
 					for (col_idx = 1; col_idx < 4; col_idx++) {
-						double in1 = sample.argb[col_idx] / 255.0;
-						double in2 = ti->base_color.argb[col_idx] / 255.0;
-						double in3 = ti->offset_color.argb[col_idx] / 255.0;
-						double res_dbl = in1 * tex_alpha + in2 * (1.0 - tex_alpha) + in3;
-
-						sample.argb[col_idx] = (int)(res_dbl * 255.0);
+						int tex_sample = sample.argb[col_idx];
+						int base = ti->base_color.argb[col_idx];
+						int offs = ti->offset_color.argb[col_idx];
+						int tex_sample_scaled = (tex_sample * tex_alpha) >> 8;
+						int base_scaled = ((255 - tex_alpha) * base) >> 8;
+						sample.argb[col_idx] =
+							(tex_sample_scaled + base_scaled) + offs;
 					}
 					sample.argb[0] = ti->base_color.argb[0];
 					break;
 				case 3:
 					// modulate with alpha
 					for (col_idx = 1; col_idx < 4; col_idx++) {
-						double in1 = sample.argb[col_idx] / 255.0;
-						double in2 = ti->base_color.argb[col_idx] / 255.0;
-						double in3 = ti->offset_color.argb[col_idx] / 255.0;
-						double res_dbl = in1 * in2 + in3;
-						sample.argb[col_idx] = (int)(res_dbl * 255.0);
-						// uint32_t fixed1 = sample.argb[col_idx] << 8;
-						// uint32_t fixed2 = ti->base_color.argb[col_idx] << 8;
-						// uint32_t fixed3 = ti->offset_color.argb[col_idx] << 8;
-						// uint32_t final_fixed = ((fixed1 * fixed2) >> 8) + fixed3;
-						// sample.argb[col_idx] = final_fixed >> 8;
+						int tex_sample = sample.argb[col_idx];
+						int base = ti->base_color.argb[col_idx];
+						int offs = ti->offset_color.argb[col_idx];
+						sample.argb[col_idx] =
+							((tex_sample * base) >> 8) + offs;
 					}
-					tex_alpha = sample.argb[0] / 255.0;
-					base_alpha = ti->base_color.argb[0] / 255.0;
-					sample.argb[0] = (int)(tex_alpha * base_alpha * 255.0);
+					tex_alpha = sample.argb[0];
+					base_alpha = ti->base_color.argb[0];
+					sample.argb[0] = (tex_alpha * base_alpha) >> 8;
 					break;
 				}
 
