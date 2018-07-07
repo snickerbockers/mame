@@ -207,6 +207,27 @@ inline uint32_t powervr2_device::bls24(uint32_t c1, uint32_t c2)
 	return cr1|(cr2 << 8);
 }
 
+inline uint32_t powervr2_device::float_argb_to_packed_argb(float argb[4]) {
+	int argb_int[4] = {
+		(int)(argb[0] * 255.0f),
+		(int)(argb[1] * 255.0f),
+		(int)(argb[2] * 255.0f),
+		(int)(argb[3] * 255.0f)
+	};
+
+	// clamp to [0, 255]
+	int idx;
+	for (idx = 0; idx < 4; idx++) {
+		if (argb_int[idx] < 0)
+			argb_int[idx] = 0;
+		else if (argb_int[idx] > 255)
+			argb_int[idx] = 255;
+	}
+
+	return (argb_int[0] << 24) | (argb_int[1] << 16) |
+		(argb_int[2] << 8) | argb_int[3];
+}
+
 // All 64 blending modes, 3 top bits are source mode, 3 bottom bits are destination mode
 uint32_t powervr2_device::bl00(uint32_t s, uint32_t d) { return 0; }
 uint32_t powervr2_device::bl01(uint32_t s, uint32_t d) { return d; }
@@ -1822,14 +1843,7 @@ void powervr2_device::process_ta_fifo()
 				int col_idx;
 
 				memcpy(argb_float, tafifo_buff + 8, 4 * sizeof(float));
-				for (col_idx = 0; col_idx < 4; col_idx++) {
-					int col = (int)(argb_float[col_idx] * 255.0f);
-					if (col < 0)
-						col = 0;
-					if (col > 255)
-						col = 255;
-					base_color.argb[col_idx] = col;
-				}
+				base_color = float_argb_to_packed_argb(argb_float);
 
 				memcpy(argb_float, tafifo_buff + 12, 4 * sizeof(float));
 				for (col_idx = 0; col_idx < 4; col_idx++) {
@@ -1842,18 +1856,9 @@ void powervr2_device::process_ta_fifo()
 				}
 			} else {
 				float argb_float[4];
-				int col_idx;
 
 				memcpy(argb_float, tafifo_buff + 4, 4 * sizeof(float));
-
-				for (col_idx = 0; col_idx < 4; col_idx++) {
-					int col = (int)(argb_float[col_idx] * 255.0f);
-					if (col < 0)
-						col = 0;
-					if (col > 255)
-						col = 255;
-					base_color.argb[col_idx] = col;
-				}
+				base_color = float_argb_to_packed_argb(argb_float);
 
 				memset(offset_color.argb, 0, sizeof(offset_color.argb));
 			}
@@ -1864,20 +1869,13 @@ void powervr2_device::process_ta_fifo()
 			memset(offset_color.argb, 0, sizeof(offset_color.argb));
 			break;
 		default:
-			memset(base_color.argb, 0, sizeof(base_color.argb));
+			base_color = 0;
 			memset(offset_color.argb, 0, sizeof(offset_color.argb));
 			break;
 		}
 	} else if (paratype == 5) {
-		uint32_t base_color_packed = tafifo_buff[4];
+		base_color = tafifo_buff[4];
 		uint32_t offset_color_packed = tafifo_buff[5];
-
-		unsigned base_argb[4] = {
-			(base_color_packed & 0xff000000) >> 24,
-			(base_color_packed & 0x00ff0000) >> 16,
-			(base_color_packed & 0x0000ff00) >> 8,
-			base_color_packed & 0x000000ff
-		};
 
 		unsigned offs_argb[4] = {
 			(offset_color_packed & 0xff000000) >> 24,
@@ -1886,7 +1884,6 @@ void powervr2_device::process_ta_fifo()
 			offset_color_packed & 0x000000ff
 		};
 
-		memcpy(base_color.argb, base_argb, sizeof(base_color));
 		if (offset_color_enable) {
 			memcpy(offset_color.argb, offs_argb, sizeof(offset_color.argb));
 		} else {
@@ -2096,18 +2093,14 @@ void powervr2_device::process_ta_fifo()
 
 					int col_idx;
 					float argb_float[4];
-					uint32_t packed;
 					float base_intensity, offs_intensity;
-					struct color base_color_tmp, offset_color_tmp;
+					uint32_t vert_offset_color = 0;
+					uint32_t vert_base_color;
 
 					switch (coltype) {
 					case 0:
 						// packed color
-						packed = tafifo_buff[6];
-						base_color_tmp.argb[0] = (packed >> 24) & 0xff;
-						base_color_tmp.argb[1] = (packed >> 16) & 0xff;
-						base_color_tmp.argb[2] = (packed >> 8) & 0xff;
-						base_color_tmp.argb[3] = (packed >> 0) & 0xff;
+						vert_base_color = tafifo_buff[6];
 						break;
 					case 1:
 						// floating-point color
@@ -2117,41 +2110,41 @@ void powervr2_device::process_ta_fifo()
 						} else {
 							memcpy(argb_float, tafifo_buff + 4, 4 * sizeof(float));
 						}
-						for (col_idx = 0; col_idx < 4; col_idx++) {
-							int col = (int)(argb_float[col_idx] * 255.0f);
-							if (col < 0)
-								col = 0;
-							if (col > 255)
-								col = 255;
-							base_color_tmp.argb[col_idx] = col;
-						}
+						vert_base_color = float_argb_to_packed_argb(argb_float);
 						break;
 					case 2:
 					case 3:
 						// base/offset color
 						memcpy(&base_intensity, tafifo_buff + 6, sizeof(float));
 						memcpy(&offs_intensity, tafifo_buff + 7, sizeof(float));
+						vert_base_color = 0;
 						for (col_idx = 0; col_idx < 4; col_idx++) {
-							int col = (base_color.argb[col_idx] / 255.0f) *
+							int shift = (3 - col_idx) * 8;
+							int col = (((base_color >> shift) & 0xff) / 255.0f) *
 								base_intensity * 255.0f;
 							if (col < 0)
 								col = 0;
 							if (col > 255)
 								col = 255;
-							base_color_tmp.argb[col_idx] = col;
+							vert_base_color |= col << shift;
 						}
 						if (offset_color_enable) {
 							for (col_idx = 0; col_idx < 4; col_idx++) {
+								int shift = (3 - col_idx) * 8;
 								int col = (offset_color.argb[col_idx] / 255.0f) *
 									offs_intensity * 255.0f;
 								if (col < 0)
 									col = 0;
 								if (col > 255)
 									col = 255;
-								offset_color_tmp.argb[col_idx] = col;
+								vert_offset_color |= col << shift;
 							}
 						}
 						break;
+					default:
+						// This will never actually happen, coltype is 2-bits.
+						logerror("line %d of %s - coltype is %d\n", coltype);
+						vert_base_color = 0;
 					}
 
 					if((!rd->strips_size) ||
@@ -2159,8 +2152,8 @@ void powervr2_device::process_ta_fifo()
 					{
 						strip *ts = &rd->strips[rd->strips_size++];
 						tex_get_info(&ts->ti);
-						ts->ti.base_color = base_color_tmp;
-						ts->ti.offset_color = offset_color_tmp;
+						ts->ti.base_color = vert_base_color;
+						ts->ti.offset_color = vert_offset_color;
 						ts->svert = rd->verts_size;
 						ts->evert = -1;
 					}
@@ -2396,37 +2389,33 @@ void powervr2_device::render_hline(bitmap_rgb32 &bitmap, texinfo *ti, int y, flo
 			}
 
 			if (ti->textured) {
-				struct color sample(c);
 				uint32_t tmp;
 				switch (ti->tsinstruction) {
 				case 0:
 					// decal
-					sample =
-						color(bls24(sample.pack(), ti->offset_color.pack()) | (c & 0xff000000));
+					c = bls24(c, ti->offset_color.pack()) | (c & 0xff000000);
 					break;
 				case 1:
 					// modulate
-					tmp = blc(c, ti->base_color.pack());
+					tmp = blc(c, ti->base_color);
 					tmp = bls24(tmp, ti->offset_color.pack());
 					tmp |= c & 0xff000000;
-					sample = color(tmp);
+					c = tmp;
 					break;
 				case 2:
 					// decal with alpha
-					tmp = bls24(blc(c, sample.argb[0]), blic(ti->base_color.pack(), sample.argb[0]));
-					tmp = bls24(tmp, offset_color.pack()) | ti->base_color.argb[0];
-					sample = color(tmp);
+					tmp = bls24(blc(c, c >> 24), blic(ti->base_color, c >> 24));
+					tmp = bls24(tmp, offset_color.pack()) | (ti->base_color >> 24);
+					c = tmp;
 					break;
 				case 3:
 					// modulate with alpha
-					tmp = blc(c, ti->base_color.pack());
+					tmp = blc(c, ti->base_color);
 					tmp = bls24(tmp, ti->offset_color.pack());
-					tmp |= ((sample.argb[0] * ti->base_color.argb[0]) >> 8) << 24;
-					sample = color(tmp);
+					tmp |= (((c >> 24) * (ti->base_color >> 24)) >> 8) << 24;
+					c = tmp;
 					break;
 				}
-
-				c = sample.pack();
 			}
 
 			if(c & 0xff000000) {
@@ -3996,5 +3985,5 @@ void powervr2_device::pvr_scanline_timer(int vpos)
 }
 
 uint32_t powervr2_device::tex_r_wtf(texinfo *t, float x, float y) {
-	return t->base_color.pack();
+	return t->base_color;
 }

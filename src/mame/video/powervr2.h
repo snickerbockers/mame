@@ -59,16 +59,7 @@ public:
 	//  our implementation is not currently tile based, and thus the accumulation buffer is screen sized
 	std::unique_ptr<bitmap_rgb32> fake_accumulationbuffer_bitmap;
 
-	struct color_type_float {
-		unsigned argb[4];
-	};
-
-	struct color_type_int {
-		unsigned argb[4];
-	};
-
 	struct color {
-		/* uint32_t(*pack)(struct color const *); */
 		unsigned argb[4];
 
 		color() {
@@ -82,10 +73,6 @@ public:
 			argb[3] = (pack32 >> 0) & 0xff;
 		}
 
-		/* union { */
-		/* 	struct color_type_float fpal; */
-		/* 	struct color_type_int pal_int; */
-		/* }; */
 		uint32_t pack(void) {
 			return (uint32_t)((0xff & argb[0]) << 24) |
 				(uint32_t)((0xff & argb[1]) << 16) |
@@ -94,14 +81,15 @@ public:
 		}
 	};
 
-	struct color base_color;
-	struct color last_mode_2_base_color;
+	uint32_t base_color;
+	uint32_t last_mode_2_base_color;
 	struct color offset_color;
 
 	struct texinfo  {
 		uint32_t address, vqbase;
 
-		struct color base_color, offset_color;
+		uint32_t base_color;
+		struct color offset_color;
 		uint32_t tsinstruction;
 
 		int textured, sizex, sizey, stride, sizes, pf, palette, mode, mipmapped, blend_mode, filter_mode;
@@ -363,7 +351,9 @@ private:
 	static int uv_flip(float uv, int size);
 	static int uv_clamp(float uv, int size);
 
-	static inline int32_t clamp(int32_t in, int32_t min, int32_t max);
+    static inline uint32_t float_argb_to_packed_argb(float argb[4]);
+
+    static inline int32_t clamp(int32_t in, int32_t min, int32_t max);
 	static inline uint32_t bilinear_filter(uint32_t c0, uint32_t c1, uint32_t c2, uint32_t c3, float u, float v);
 	static inline uint32_t bla(uint32_t c, uint32_t a);
 	static inline uint32_t blia(uint32_t c, uint32_t a);
