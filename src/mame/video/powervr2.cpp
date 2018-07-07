@@ -2087,12 +2087,15 @@ void powervr2_device::process_ta_fifo()
 					case 1:
 						// floating-point color
 						if (have_16_byte_header) {
-							// TODO: offset color
 							memcpy(argb_float, tafifo_buff + 8, 4 * sizeof(float));
+							vert_base_color = float_argb_to_packed_argb(argb_float);
+
+							memcpy(argb_float, tafifo_buff + 12, 4 * sizeof(float));
+							vert_offset_color = float_argb_to_packed_argb(argb_float);
 						} else {
 							memcpy(argb_float, tafifo_buff + 4, 4 * sizeof(float));
+							vert_base_color = float_argb_to_packed_argb(argb_float);
 						}
-						vert_base_color = float_argb_to_packed_argb(argb_float);
 						break;
 					case 2:
 					case 3:
