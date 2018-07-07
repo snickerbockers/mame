@@ -209,10 +209,10 @@ inline uint32_t powervr2_device::bls24(uint32_t c1, uint32_t c2)
 
 inline uint32_t powervr2_device::float_argb_to_packed_argb(float argb[4]) {
 	int argb_int[4] = {
-		(int)(argb[0] * 255.0f),
-		(int)(argb[1] * 255.0f),
-		(int)(argb[2] * 255.0f),
-		(int)(argb[3] * 255.0f)
+		(int)(argb[0] * 256.0f),
+		(int)(argb[1] * 256.0f),
+		(int)(argb[2] * 256.0f),
+		(int)(argb[3] * 256.0f)
 	};
 
 	// clamp to [0, 255]
