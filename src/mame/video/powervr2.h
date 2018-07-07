@@ -59,37 +59,15 @@ public:
 	//  our implementation is not currently tile based, and thus the accumulation buffer is screen sized
 	std::unique_ptr<bitmap_rgb32> fake_accumulationbuffer_bitmap;
 
-	struct color {
-		unsigned argb[4];
-
-		color() {
-			memset(argb, 0, sizeof(argb));
-		}
-
-		color(uint32_t pack32) {
-			argb[0] = (pack32 >> 24) & 0xff;
-			argb[1] = (pack32 >> 16) & 0xff;
-			argb[2] = (pack32 >> 8) & 0xff;
-			argb[3] = (pack32 >> 0) & 0xff;
-		}
-
-		uint32_t pack(void) {
-			return (uint32_t)((0xff & argb[0]) << 24) |
-				(uint32_t)((0xff & argb[1]) << 16) |
-				(uint32_t)((0xff & argb[2]) << 8)  |
-				(uint32_t)((0xff & argb[3]) << 0);
-		}
-	};
-
 	uint32_t base_color;
 	uint32_t last_mode_2_base_color;
-	struct color offset_color;
+	uint32_t offset_color;
 
 	struct texinfo  {
 		uint32_t address, vqbase;
 
 		uint32_t base_color;
-		struct color offset_color;
+		uint32_t offset_color;
 		uint32_t tsinstruction;
 
 		int textured, sizex, sizey, stride, sizes, pf, palette, mode, mipmapped, blend_mode, filter_mode;

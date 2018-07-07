@@ -1840,55 +1840,37 @@ void powervr2_device::process_ta_fifo()
 		case 2:
 			if (offset_color_enable) {
 				float argb_float[4];
-				int col_idx;
 
 				memcpy(argb_float, tafifo_buff + 8, 4 * sizeof(float));
 				base_color = float_argb_to_packed_argb(argb_float);
 
 				memcpy(argb_float, tafifo_buff + 12, 4 * sizeof(float));
-				for (col_idx = 0; col_idx < 4; col_idx++) {
-					int col = (int)(argb_float[col_idx] * 255.0f);
-					if (col < 0)
-						col = 0;
-					if (col > 255)
-						col = 255;
-					offset_color.argb[col_idx] = col;
-				}
+				offset_color = float_argb_to_packed_argb(argb_float);
 			} else {
 				float argb_float[4];
 
 				memcpy(argb_float, tafifo_buff + 4, 4 * sizeof(float));
 				base_color = float_argb_to_packed_argb(argb_float);
 
-				memset(offset_color.argb, 0, sizeof(offset_color.argb));
+				offset_color = 0;
 			}
 			last_mode_2_base_color = base_color;
 			break;
 		case 3:
 			base_color = last_mode_2_base_color;
-			memset(offset_color.argb, 0, sizeof(offset_color.argb));
+			offset_color = 0;
 			break;
 		default:
 			base_color = 0;
-			memset(offset_color.argb, 0, sizeof(offset_color.argb));
+			offset_color = 0;
 			break;
 		}
 	} else if (paratype == 5) {
 		base_color = tafifo_buff[4];
-		uint32_t offset_color_packed = tafifo_buff[5];
-
-		unsigned offs_argb[4] = {
-			(offset_color_packed & 0xff000000) >> 24,
-			(offset_color_packed & 0x00ff0000) >> 16,
-			(offset_color_packed & 0x0000ff00) >> 8,
-			offset_color_packed & 0x000000ff
-		};
-
-		if (offset_color_enable) {
-			memcpy(offset_color.argb, offs_argb, sizeof(offset_color.argb));
-		} else {
-			memset(offset_color.argb, 0, sizeof(offset_color.argb));
-		}
+		if (offset_color_enable)
+			offset_color = tafifo_buff[5];
+		else
+			offset_color = 0;
 	}
 
 	// here we should generate the data for the various tiles
@@ -2131,7 +2113,7 @@ void powervr2_device::process_ta_fifo()
 						if (offset_color_enable) {
 							for (col_idx = 0; col_idx < 4; col_idx++) {
 								int shift = (3 - col_idx) * 8;
-								int col = (offset_color.argb[col_idx] / 255.0f) *
+								int col = (((offset_color >> shift) & 0xff) / 255.0f) *
 									offs_intensity * 255.0f;
 								if (col < 0)
 									col = 0;
@@ -2393,25 +2375,25 @@ void powervr2_device::render_hline(bitmap_rgb32 &bitmap, texinfo *ti, int y, flo
 				switch (ti->tsinstruction) {
 				case 0:
 					// decal
-					c = bls24(c, ti->offset_color.pack()) | (c & 0xff000000);
+					c = bls24(c, ti->offset_color) | (c & 0xff000000);
 					break;
 				case 1:
 					// modulate
 					tmp = blc(c, ti->base_color);
-					tmp = bls24(tmp, ti->offset_color.pack());
+					tmp = bls24(tmp, ti->offset_color);
 					tmp |= c & 0xff000000;
 					c = tmp;
 					break;
 				case 2:
 					// decal with alpha
 					tmp = bls24(blc(c, c >> 24), blic(ti->base_color, c >> 24));
-					tmp = bls24(tmp, offset_color.pack()) | (ti->base_color >> 24);
+					tmp = bls24(tmp, offset_color) | (ti->base_color >> 24);
 					c = tmp;
 					break;
 				case 3:
 					// modulate with alpha
 					tmp = blc(c, ti->base_color);
-					tmp = bls24(tmp, ti->offset_color.pack());
+					tmp = bls24(tmp, ti->offset_color);
 					tmp |= (((c >> 24) * (ti->base_color >> 24)) >> 8) << 24;
 					c = tmp;
 					break;
