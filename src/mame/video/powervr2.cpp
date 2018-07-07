@@ -2390,7 +2390,7 @@ void powervr2_device::render_hline(bitmap_rgb32 &bitmap, texinfo *ti, int y, flo
 				case 2:
 					// decal with alpha
 					tmp = bls24(blc(c, c >> 24), blic(ti->base_color, c >> 24));
-					tmp = bls24(tmp, offset_color) | (ti->base_color >> 24);
+					tmp = bls24(tmp, ti->offset_color) | (ti->base_color >> 24);
 					c = tmp;
 					break;
 				case 3:
