@@ -66,8 +66,6 @@ public:
 	struct texinfo  {
 		uint32_t address, vqbase;
 
-		uint32_t base_color;
-		uint32_t offset_color;
 		uint32_t tsinstruction;
 
 		int textured, sizex, sizey, stride, sizes, pf, palette, mode, mipmapped, blend_mode, filter_mode;
@@ -83,6 +81,8 @@ public:
 	typedef struct
 	{
 		float x, y, w, u, v;
+
+		uint32_t base_color, offset_color;
 	} vert;
 
 	struct strip
@@ -444,17 +444,21 @@ private:
 	uint32_t tex_r_default(texinfo *t, float x, float y);
 	void tex_get_info(texinfo *t);
 
-	void render_hline(bitmap_rgb32 &bitmap, texinfo *ti, int y, float xl, float xr, float ul, float ur, float vl, float vr, float wl, float wr);
+	void render_hline(bitmap_rgb32 &bitmap, texinfo *ti, int y, float xl, float xr, float ul, float ur, float vl, float vr, float wl, float wr, float const bl[4], float const br[4], float const offl[4], float const offr[4]);
 	void render_span(bitmap_rgb32 &bitmap, texinfo *ti,
 						float y0, float y1,
 						float xl, float xr,
 						float ul, float ur,
 						float vl, float vr,
 						float wl, float wr,
+						float const bl[4], float const br[4],
+						float const offl[4], float const offr[4],
 						float dxldy, float dxrdy,
 						float duldy, float durdy,
 						float dvldy, float dvrdy,
-						float dwldy, float dwrdy);
+						float dwldy, float dwrdy,
+						float const dbldy[4], float const dbrdy[4],
+						float const doldy[4], float const dordy[4]);
 	void sort_vertices(const vert *v, int *i0, int *i1, int *i2);
 	void render_tri_sorted(bitmap_rgb32 &bitmap, texinfo *ti, const vert *v0, const vert *v1, const vert *v2);
 	void render_tri(bitmap_rgb32 &bitmap, texinfo *ti, const vert *v);

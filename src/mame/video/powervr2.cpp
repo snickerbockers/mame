@@ -717,8 +717,6 @@ void powervr2_device::tex_get_info(texinfo *t)
 	t->vqbase = t->address;
 	t->blend = use_alpha ? blend_functions[t->blend_mode] : bl10;
 
-	t->base_color = base_color;
-	t->offset_color = offset_color;
 	t->coltype = coltype;
 	t->tsinstruction = tsinstruction;
 
@@ -2044,6 +2042,13 @@ void powervr2_device::process_ta_fifo()
 						tv[2].u = tv[0].u+tv[3].u-tv[1].u;
 						tv[2].v = tv[0].v+tv[3].v-tv[1].v;
 
+						// TODO: sprites
+						int idx;
+						for (idx = 0; idx < 4; idx++) {
+							tv[idx].base_color = 0xffffffff;
+							tv[idx].offset_color = 0x00000000;
+						}
+
 						ts = &rd->strips[rd->strips_size++];
 						tex_get_info(&ts->ti);
 						ts->svert = rd->verts_size;
@@ -2062,22 +2067,12 @@ void powervr2_device::process_ta_fifo()
 				#endif
 				if (rd->verts_size <= 65530)
 				{
-					/* add a vertex to our list */
-					/* this is used for 3d stuff, ie most of the graphics (see guilty gear, confidential mission, maze of the kings etc.) */
-					/* -- this is also wildly inaccurate! */
-					vert *tv = &rd->verts[rd->verts_size];
-
-					tv->x=u2f(tafifo_buff[1]);
-					tv->y=u2f(tafifo_buff[2]);
-					tv->w=u2f(tafifo_buff[3]);
-					tv->u=u2f(tafifo_buff[4]);
-					tv->v=u2f(tafifo_buff[5]);
+					uint32_t vert_offset_color = 0;
+					uint32_t vert_base_color;
 
 					int col_idx;
 					float argb_float[4];
 					float base_intensity, offs_intensity;
-					uint32_t vert_offset_color = 0;
-					uint32_t vert_base_color;
 
 					switch (coltype) {
 					case 0:
@@ -2132,13 +2127,24 @@ void powervr2_device::process_ta_fifo()
 						vert_base_color = 0;
 					}
 
+					/* add a vertex to our list */
+					/* this is used for 3d stuff, ie most of the graphics (see guilty gear, confidential mission, maze of the kings etc.) */
+					/* -- this is also wildly inaccurate! */
+					vert *tv = &rd->verts[rd->verts_size];
+
+					tv->x=u2f(tafifo_buff[1]);
+					tv->y=u2f(tafifo_buff[2]);
+					tv->w=u2f(tafifo_buff[3]);
+					tv->u=u2f(tafifo_buff[4]);
+					tv->v=u2f(tafifo_buff[5]);
+					tv->base_color = vert_base_color;
+					tv->offset_color = vert_offset_color;
+
 					if((!rd->strips_size) ||
 						rd->strips[rd->strips_size-1].evert != -1)
 					{
 						strip *ts = &rd->strips[rd->strips_size++];
 						tex_get_info(&ts->ti);
-						ts->ti.base_color = vert_base_color;
-						ts->ti.offset_color = vert_offset_color;
 						ts->svert = rd->verts_size;
 						ts->evert = -1;
 					}
@@ -2314,8 +2320,9 @@ void powervr2_device::computedilated()
 			dilatechose[(b << 3) + a]=3+(a < b ? a : b);
 }
 
-void powervr2_device::render_hline(bitmap_rgb32 &bitmap, texinfo *ti, int y, float xl, float xr, float ul, float ur, float vl, float vr, float wl, float wr)
+void powervr2_device::render_hline(bitmap_rgb32 &bitmap, texinfo *ti, int y, float xl, float xr, float ul, float ur, float vl, float vr, float wl, float wr, float const bl_in[4], float const br_in[4], float const offl_in[4], float const offr_in[4])
 {
+	int idx;
 	int xxl, xxr;
 	float dx, ddx, dudx, dvdx, dwdx;
 	uint32_t *tdata;
@@ -2323,6 +2330,10 @@ void powervr2_device::render_hline(bitmap_rgb32 &bitmap, texinfo *ti, int y, flo
 
 	// untextured cases aren't handled
 //  if (!ti->textured) return;
+
+	float bl[4], offl[4];
+	memcpy(bl, bl_in, sizeof(bl));
+	memcpy(offl, offl_in, sizeof(offl));
 
 	if(xr < 0 || xl >= 640)
 		return;
@@ -2338,6 +2349,20 @@ void powervr2_device::render_hline(bitmap_rgb32 &bitmap, texinfo *ti, int y, flo
 	dvdx = (vr-vl)/dx;
 	dwdx = (wr-wl)/dx;
 
+	float dbdx[4] = {
+		(br_in[0] - bl[0]) / dx,
+		(br_in[1] - bl[1]) / dx,
+		(br_in[2] - bl[2]) / dx,
+		(br_in[3] - bl[3]) / dx
+	};
+
+	float dodx[4] = {
+		(offr_in[0] - offl[0]) / dx,
+		(offr_in[1] - offl[1]) / dx,
+		(offr_in[2] - offl[2]) / dx,
+		(offr_in[3] - offl[3]) / dx
+	};
+
 	if(xxl < 0)
 		xxl = 0;
 	if(xxr > 640)
@@ -2348,7 +2373,10 @@ void powervr2_device::render_hline(bitmap_rgb32 &bitmap, texinfo *ti, int y, flo
 	ul += ddx*dudx;
 	vl += ddx*dvdx;
 	wl += ddx*dwdx;
-
+	for (idx = 0; idx < 4; idx++) {
+		bl[idx] += ddx * dbdx[idx];
+		offl[idx] += ddx * dodx[idx];
+	}
 
 	tdata = &bitmap.pix32(y, xxl);
 	wbufline = &wbuffer[y][xxl];
@@ -2373,34 +2401,39 @@ void powervr2_device::render_hline(bitmap_rgb32 &bitmap, texinfo *ti, int y, flo
 				}
 			}
 
+			uint32_t offset_color = float_argb_to_packed_argb(offl);
+			uint32_t base_color = float_argb_to_packed_argb(bl);
+
 			if (ti->textured) {
 				uint32_t tmp;
 				switch (ti->tsinstruction) {
 				case 0:
 					// decal
-					c = bls24(c, ti->offset_color) | (c & 0xff000000);
+					c = bls24(c, offset_color) | (c & 0xff000000);
 					break;
 				case 1:
 					// modulate
-					tmp = blc(c, ti->base_color);
-					tmp = bls24(tmp, ti->offset_color);
+					tmp = blc(c, base_color);
+					tmp = bls24(tmp, offset_color);
 					tmp |= c & 0xff000000;
 					c = tmp;
 					break;
 				case 2:
 					// decal with alpha
-					tmp = bls24(blc(c, c >> 24), blic(ti->base_color, c >> 24));
-					tmp = bls24(tmp, ti->offset_color) | (ti->base_color & 0xff000000);
+					tmp = bls24(blc(c, c >> 24), blic(base_color, c >> 24));
+					tmp = bls24(tmp, offset_color) | (base_color & 0xff000000);
 					c = tmp;
 					break;
 				case 3:
 					// modulate with alpha
-					tmp = blc(c, ti->base_color);
-					tmp = bls24(tmp, ti->offset_color);
-					tmp |= (((c >> 24) * (ti->base_color >> 24)) >> 8) << 24;
+					tmp = blc(c, base_color);
+					tmp = bls24(tmp, offset_color);
+					tmp |= (((c >> 24) * (base_color >> 24)) >> 8) << 24;
 					c = tmp;
 					break;
 				}
+			} else {
+				c = base_color;
 			}
 
 			if(c & 0xff000000) {
@@ -2414,6 +2447,10 @@ void powervr2_device::render_hline(bitmap_rgb32 &bitmap, texinfo *ti, int y, flo
 		ul += dudx;
 		vl += dvdx;
 		wl += dwdx;
+		for (idx = 0; idx < 4; idx++) {
+			bl[idx] += dbdx[idx];
+			offl[idx] += dodx[idx];
+		}
 		xxl ++;
 	}
 }
@@ -2424,11 +2461,16 @@ void powervr2_device::render_span(bitmap_rgb32 &bitmap, texinfo *ti,
 									float ul, float ur,
 									float vl, float vr,
 									float wl, float wr,
+									float const bl_in[4], float const br_in[4],
+									float const offl_in[4], float const offr_in[4],
 									float dxldy, float dxrdy,
 									float duldy, float durdy,
 									float dvldy, float dvrdy,
-									float dwldy, float dwrdy)
+									float dwldy, float dwrdy,
+									float const dbldy[4], float const dbrdy[4],
+									float const doldy[4], float const dordy[4])
 {
+	int idx;
 	float dy;
 	int yy0, yy1;
 
@@ -2436,6 +2478,12 @@ void powervr2_device::render_span(bitmap_rgb32 &bitmap, texinfo *ti,
 		return;
 	if(y1 > 480)
 		y1 = 480;
+
+	float bl[4], br[4], offl[4], offr[4];
+	memcpy(bl, bl_in, sizeof(bl));
+	memcpy(br, br_in, sizeof(br));
+	memcpy(offl, offl_in, sizeof(offl));
+	memcpy(offr, offr_in, sizeof(offr));
 
 	if(y0 < 0) {
 		xl += -dxldy*y0;
@@ -2446,6 +2494,13 @@ void powervr2_device::render_span(bitmap_rgb32 &bitmap, texinfo *ti,
 		vr += -dvrdy*y0;
 		wl += -dwldy*y0;
 		wr += -dwrdy*y0;
+
+		for (idx = 0; idx < 4; idx++) {
+			bl[idx] += -dbldy[idx] * y0;
+			br[idx] += -dbrdy[idx] * y0;
+			offl[idx] += -doldy[idx] * y0;
+			offr[idx] += -dordy[idx] * y0;
+		}
 		y0 = 0;
 	}
 
@@ -2470,9 +2525,15 @@ void powervr2_device::render_span(bitmap_rgb32 &bitmap, texinfo *ti,
 	vr += dy*dvrdy;
 	wl += dy*dwldy;
 	wr += dy*dwrdy;
+	for (idx = 0; idx < 4; idx++) {
+		bl[idx]   += dy * dbldy[idx];
+		br[idx]   += dy * dbrdy[idx];
+		offl[idx] += dy * doldy[idx];
+		offr[idx] += dy * dordy[idx];
+	}
 
 	while(yy0 < yy1) {
-		render_hline(bitmap, ti, yy0, xl, xr, ul, ur, vl, vr, wl, wr);
+		render_hline(bitmap, ti, yy0, xl, xr, ul, ur, vl, vr, wl, wr, bl, br, offl, offr);
 
 		xl += dxldy;
 		xr += dxrdy;
@@ -2482,6 +2543,13 @@ void powervr2_device::render_span(bitmap_rgb32 &bitmap, texinfo *ti,
 		vr += dvrdy;
 		wl += dwldy;
 		wr += dwrdy;
+		for (idx = 0; idx < 4; idx++) {
+			bl[idx] += dbldy[idx];
+			br[idx] += dbrdy[idx];
+			offl[idx] += doldy[idx];
+			offr[idx] += dordy[idx];
+		}
+
 		yy0 ++;
 	}
 }
@@ -2526,9 +2594,135 @@ void powervr2_device::render_tri_sorted(bitmap_rgb32 &bitmap, texinfo *ti, const
 	if(v0->y >= 480 || v2->y < 0)
 		return;
 
+	float base_v0[4] = {
+		((v0->base_color >> 24) & 0xff) / 256.0f,
+		((v0->base_color >> 16) & 0xff) / 256.0f,
+		((v0->base_color >> 8) & 0xff) / 256.0f,
+		(v0->base_color & 0xff) / 256.0f,
+	};
+
+	float base_v1[4] = {
+		((v1->base_color >> 24) & 0xff) / 256.0f,
+		((v1->base_color >> 16) & 0xff) / 256.0f,
+		((v1->base_color >> 8) & 0xff) / 256.0f,
+		(v1->base_color & 0xff) / 256.0f,
+	};
+
+	float base_v2[4] = {
+		((v2->base_color >> 24) & 0xff) / 256.0f,
+		((v2->base_color >> 16) & 0xff) / 256.0f,
+		((v2->base_color >> 8) & 0xff) / 256.0f,
+		(v2->base_color & 0xff) / 256.0f,
+	};
+
+	float offset_v0[4] = {
+		((v0->offset_color >> 24) & 0xff) / 256.0f,
+		((v0->offset_color >> 16) & 0xff) / 256.0f,
+		((v0->offset_color >> 8) & 0xff) / 256.0f,
+		(v0->offset_color & 0xff) / 256.0f,
+	};
+
+	float offset_v1[4] = {
+		((v1->offset_color >> 24) & 0xff) / 256.0f,
+		((v1->offset_color >> 16) & 0xff) / 256.0f,
+		((v1->offset_color >> 8) & 0xff) / 256.0f,
+		(v1->offset_color & 0xff) / 256.0f,
+	};
+
+	float offset_v2[4] = {
+		((v2->offset_color >> 24) & 0xff) / 256.0f,
+		((v2->offset_color >> 16) & 0xff) / 256.0f,
+		((v2->offset_color >> 8) & 0xff) / 256.0f,
+		(v2->offset_color & 0xff) / 256.0f,
+	};
+
+	float db01[4] = {
+		base_v1[0] - base_v0[0],
+		base_v1[1] - base_v0[1],
+		base_v1[2] - base_v0[2],
+		base_v1[3] - base_v0[3]
+	};
+
+	float db02[4] = {
+		base_v2[0] - base_v0[0],
+		base_v2[1] - base_v0[1],
+		base_v2[2] - base_v0[2],
+		base_v2[3] - base_v0[3]
+	};
+
+	float db12[4] = {
+		base_v2[0] - base_v1[0],
+		base_v2[1] - base_v1[1],
+		base_v2[2] - base_v1[2],
+		base_v2[3] - base_v1[3]
+	};
+
+	float do01[4] = {
+		offset_v1[0] - offset_v0[0],
+		offset_v1[1] - offset_v0[1],
+		offset_v1[2] - offset_v0[2],
+		offset_v1[3] - offset_v0[3]
+	};
+
+	float do02[4] = {
+		offset_v2[0] - offset_v0[0],
+		offset_v2[1] - offset_v0[1],
+		offset_v2[2] - offset_v0[2],
+		offset_v2[3] - offset_v0[3]
+	};
+
+	float do12[4] = {
+		offset_v2[0] - offset_v1[0],
+		offset_v2[1] - offset_v1[1],
+		offset_v2[2] - offset_v1[2],
+		offset_v2[3] - offset_v1[3]
+	};
+
 	dy01 = v1->y - v0->y;
 	dy02 = v2->y - v0->y;
 	dy12 = v2->y - v1->y;
+
+	float db01dy[4] = {
+		dy01 ? db01[0]/dy01 : 0,
+		dy01 ? db01[1]/dy01 : 0,
+		dy01 ? db01[2]/dy01 : 0,
+		dy01 ? db01[3]/dy01 : 0
+	};
+
+	float db02dy[4] = {
+		dy01 ? db02[0]/dy02 : 0,
+		dy01 ? db02[1]/dy02 : 0,
+		dy01 ? db02[2]/dy02 : 0,
+		dy01 ? db02[3]/dy02 : 0
+	};
+
+	float db12dy[4] = {
+		dy01 ? db12[0]/dy12 : 0,
+		dy01 ? db12[1]/dy12 : 0,
+		dy01 ? db12[2]/dy12 : 0,
+		dy01 ? db12[3]/dy12 : 0
+	};
+
+	float do01dy[4] = {
+		dy01 ? do01[0]/dy01 : 0,
+		dy01 ? do01[1]/dy01 : 0,
+		dy01 ? do01[2]/dy01 : 0,
+		dy01 ? do01[3]/dy01 : 0
+	};
+
+	float do02dy[4] = {
+		dy01 ? do02[0]/dy02 : 0,
+		dy01 ? do02[1]/dy02 : 0,
+		dy01 ? do02[2]/dy02 : 0,
+		dy01 ? do02[3]/dy02 : 0
+	};
+
+	float do12dy[4] = {
+		dy01 ? do12[0]/dy12 : 0,
+		dy01 ? do12[1]/dy12 : 0,
+		dy01 ? do12[2]/dy12 : 0,
+		dy01 ? do12[3]/dy12 : 0
+	};
 
 	dx01dy = dy01 ? (v1->x-v0->x)/dy01 : 0;
 	dx02dy = dy02 ? (v2->x-v0->x)/dy02 : 0;
@@ -2551,31 +2745,43 @@ void powervr2_device::render_tri_sorted(bitmap_rgb32 &bitmap, texinfo *ti, const
 			return;
 
 		if(v1->x > v0->x)
-			render_span(bitmap, ti, v1->y, v2->y, v0->x, v1->x, v0->u, v1->u, v0->v, v1->v, v0->w, v1->w, dx02dy, dx12dy, du02dy, du12dy, dv02dy, dv12dy, dw02dy, dw12dy);
+			render_span(bitmap, ti, v1->y, v2->y, v0->x, v1->x, v0->u, v1->u, v0->v, v1->v, v0->w, v1->w, base_v0, base_v1, offset_v0, offset_v1, dx02dy, dx12dy, du02dy, du12dy, dv02dy, dv12dy, dw02dy, dw12dy, db02dy, db12dy, do02dy, do12dy);
 		else
-			render_span(bitmap, ti, v1->y, v2->y, v1->x, v0->x, v1->u, v0->u, v1->v, v0->v, v1->w, v0->w, dx12dy, dx02dy, du12dy, du02dy, dv12dy, dv02dy, dw12dy, dw02dy);
+			render_span(bitmap, ti, v1->y, v2->y, v1->x, v0->x, v1->u, v0->u, v1->v, v0->v, v1->w, v0->w, base_v1, base_v0, offset_v1, offset_v0, dx12dy, dx02dy, du12dy, du02dy, dv12dy, dv02dy, dw12dy, dw02dy, db12dy, db02dy, do12dy, do02dy);
 
 	} else if(!dy12) {
 		if(v2->x > v1->x)
-			render_span(bitmap, ti, v0->y, v1->y, v0->x, v0->x, v0->u, v0->u, v0->v, v0->v, v0->w, v0->w, dx01dy, dx02dy, du01dy, du02dy, dv01dy, dv02dy, dw01dy, dw02dy);
+			render_span(bitmap, ti, v0->y, v1->y, v0->x, v0->x, v0->u, v0->u, v0->v, v0->v, v0->w, v0->w, base_v0, base_v0, offset_v0, offset_v0, dx01dy, dx02dy, du01dy, du02dy, dv01dy, dv02dy, dw01dy, dw02dy, db01dy, db02dy, do01dy, do02dy);
 		else
-			render_span(bitmap, ti, v0->y, v1->y, v0->x, v0->x, v0->u, v0->u, v0->v, v0->v, v0->w, v0->w, dx02dy, dx01dy, du02dy, du01dy, dv02dy, dv01dy, dw02dy, dw01dy);
+			render_span(bitmap, ti, v0->y, v1->y, v0->x, v0->x, v0->u, v0->u, v0->v, v0->v, v0->w, v0->w, base_v0, base_v0, offset_v0, offset_v0, dx02dy, dx01dy, du02dy, du01dy, dv02dy, dv01dy, dw02dy, dw01dy, db02dy, db01dy, do02dy, do01dy);
 
 	} else {
+			float idk_b[4] = {
+				base_v0[0] + db02dy[0] * dy01,
+				base_v0[1] + db02dy[1] * dy01,
+				base_v0[2] + db02dy[2] * dy01,
+				base_v0[3] + db02dy[3] * dy01
+			};
+			float idk_o[4] = {
+				offset_v0[0] + do02dy[0] * dy01,
+				offset_v0[1] + do02dy[1] * dy01,
+				offset_v0[2] + do02dy[2] * dy01,
+				offset_v0[3] + do02dy[3] * dy01
+			};
 		if(dx01dy < dx02dy) {
 			render_span(bitmap, ti, v0->y, v1->y,
-						v0->x, v0->x, v0->u, v0->u, v0->v, v0->v, v0->w, v0->w,
-						dx01dy, dx02dy, du01dy, du02dy, dv01dy, dv02dy, dw01dy, dw02dy);
+						v0->x, v0->x, v0->u, v0->u, v0->v, v0->v, v0->w, v0->w, base_v0, base_v0, offset_v0, offset_v0,
+						dx01dy, dx02dy, du01dy, du02dy, dv01dy, dv02dy, dw01dy, dw02dy, db01dy, db02dy, do01dy, do02dy);
 			render_span(bitmap, ti, v1->y, v2->y,
-						v1->x, v0->x + dx02dy*dy01, v1->u, v0->u + du02dy*dy01, v1->v, v0->v + dv02dy*dy01, v1->w, v0->w + dw02dy*dy01,
-						dx12dy, dx02dy, du12dy, du02dy, dv12dy, dv02dy, dw12dy, dw02dy);
+						v1->x, v0->x + dx02dy*dy01, v1->u, v0->u + du02dy*dy01, v1->v, v0->v + dv02dy*dy01, v1->w, v0->w + dw02dy*dy01, base_v1, idk_b, offset_v1, idk_o,
+						dx12dy, dx02dy, du12dy, du02dy, dv12dy, dv02dy, dw12dy, dw02dy, db12dy, db02dy, do12dy, do02dy);
 		} else {
 			render_span(bitmap, ti, v0->y, v1->y,
-						v0->x, v0->x, v0->u, v0->u, v0->v, v0->v, v0->w, v0->w,
-						dx02dy, dx01dy, du02dy, du01dy, dv02dy, dv01dy, dw02dy, dw01dy);
+						v0->x, v0->x, v0->u, v0->u, v0->v, v0->v, v0->w, v0->w, base_v0, base_v0, offset_v0, offset_v0,
+						dx02dy, dx01dy, du02dy, du01dy, dv02dy, dv01dy, dw02dy, dw01dy, db02dy, db01dy, do02dy, do01dy);
 			render_span(bitmap, ti, v1->y, v2->y,
-						v0->x + dx02dy*dy01, v1->x, v0->u + du02dy*dy01, v1->u, v0->v + dv02dy*dy01, v1->v, v0->w + dw02dy*dy01, v1->w,
-						dx02dy, dx12dy, du02dy, du12dy, dv02dy, dv12dy, dw02dy, dw12dy);
+						v0->x + dx02dy*dy01, v1->x, v0->u + du02dy*dy01, v1->u, v0->v + dv02dy*dy01, v1->v, v0->w + dw02dy*dy01, v1->w, idk_b, base_v1, idk_o, offset_v1,
+						dx02dy, dx12dy, du02dy, du12dy, dv02dy, dv12dy, dw02dy, dw12dy, db02dy, db12dy, do02dy, do12dy);
 		}
 	}
 }
@@ -3970,5 +4176,5 @@ void powervr2_device::pvr_scanline_timer(int vpos)
 }
 
 uint32_t powervr2_device::tex_r_wtf(texinfo *t, float x, float y) {
-	return t->base_color;
+	return 0xdeadbabe;
 }
