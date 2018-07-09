@@ -2383,28 +2383,27 @@ void powervr2_device::render_hline(bitmap_rgb32 &bitmap, texinfo *ti, int y, flo
 
 	while(xxl < xxr) {
 		if((wl >= *wbufline)) {
-			uint32_t c;
 			float u = ul/wl;
 			float v = vl/wl;
 
-			c = (this->*(ti->r))(ti, u, v);
-
-			// debug dip to turn on/off bilinear filtering, it's slooooow
-			if (debug_dip_status&0x1)
-			{
-				if(ti->filter_mode >= TEX_FILTER_BILINEAR)
-				{
-					uint32_t c1 = (this->*(ti->r))(ti, u+1.0f, v);
-					uint32_t c2 = (this->*(ti->r))(ti, u+1.0f, v+1.0f);
-					uint32_t c3 = (this->*(ti->r))(ti, u, v+1.0f);
-					c = bilinear_filter(c, c1, c2, c3, u, v);
-				}
-			}
-
+			uint32_t c;
 			uint32_t offset_color = float_argb_to_packed_argb(offl);
 			uint32_t base_color = float_argb_to_packed_argb(bl);
 
 			if (ti->textured) {
+				c = (this->*(ti->r))(ti, u, v);
+				// debug dip to turn on/off bilinear filtering, it's slooooow
+				if (debug_dip_status&0x1)
+				{
+					if(ti->filter_mode >= TEX_FILTER_BILINEAR)
+					{
+						uint32_t c1 = (this->*(ti->r))(ti, u+1.0f, v);
+						uint32_t c2 = (this->*(ti->r))(ti, u+1.0f, v+1.0f);
+						uint32_t c3 = (this->*(ti->r))(ti, u, v+1.0f);
+						c = bilinear_filter(c, c1, c2, c3, u, v);
+					}
+				}
+
 				uint32_t tmp;
 				switch (ti->tsinstruction) {
 				case 0:
