@@ -2042,11 +2042,10 @@ void powervr2_device::process_ta_fifo()
 						tv[2].u = tv[0].u+tv[3].u-tv[1].u;
 						tv[2].v = tv[0].v+tv[3].v-tv[1].v;
 
-						// TODO: sprites
 						int idx;
 						for (idx = 0; idx < 4; idx++) {
-							tv[idx].base_color = 0xffffffff;
-							tv[idx].offset_color = 0x00000000;
+							tv[idx].base_color = base_color;
+							tv[idx].offset_color = offset_color;
 						}
 
 						ts = &rd->strips[rd->strips_size++];
