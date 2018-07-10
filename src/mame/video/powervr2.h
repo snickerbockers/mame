@@ -59,9 +59,8 @@ public:
 	//  our implementation is not currently tile based, and thus the accumulation buffer is screen sized
 	std::unique_ptr<bitmap_rgb32> fake_accumulationbuffer_bitmap;
 
-	uint32_t base_color;
-	uint32_t last_mode_2_base_color;
-	uint32_t offset_color;
+	float poly_base_color[4], poly_offs_color[4],
+		poly_last_mode_2_base_color[4];
 
 	struct texinfo  {
 		uint32_t address, vqbase;
@@ -82,7 +81,7 @@ public:
 	{
 		float x, y, w, u, v;
 
-		uint32_t base_color, offset_color;
+		float base_color[4], offset_color[4];
 	} vert;
 
 	struct strip
@@ -329,9 +328,10 @@ private:
 	static int uv_flip(float uv, int size);
 	static int uv_clamp(float uv, int size);
 
-    static inline uint32_t float_argb_to_packed_argb(float argb[4]);
+	static inline uint32_t float_argb_to_packed_argb(float argb[4]);
+	static inline void packed_argb_to_float_argb(float dst[4], uint32_t in);
 
-    static inline int32_t clamp(int32_t in, int32_t min, int32_t max);
+	static inline int32_t clamp(int32_t in, int32_t min, int32_t max);
 	static inline uint32_t bilinear_filter(uint32_t c0, uint32_t c1, uint32_t c2, uint32_t c3, float u, float v);
 	static inline uint32_t bla(uint32_t c, uint32_t a);
 	static inline uint32_t blia(uint32_t c, uint32_t a);

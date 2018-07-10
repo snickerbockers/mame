@@ -228,6 +228,13 @@ inline uint32_t powervr2_device::float_argb_to_packed_argb(float argb[4]) {
 		(argb_int[2] << 8) | argb_int[3];
 }
 
+inline void powervr2_device::packed_argb_to_float_argb(float dst[4], uint32_t in) {
+    dst[0] = (in >> 24) / 256.0f;
+    dst[1] = ((in >> 16) & 0xff) / 256.0f;
+    dst[2] = ((in >> 8) & 0xff) / 256.0f;
+    dst[3] = (in & 0xff) / 256.0f;
+}
+
 // All 64 blending modes, 3 top bits are source mode, 3 bottom bits are destination mode
 uint32_t powervr2_device::bl00(uint32_t s, uint32_t d) { return 0; }
 uint32_t powervr2_device::bl01(uint32_t s, uint32_t d) { return d; }
@@ -1837,38 +1844,30 @@ void powervr2_device::process_ta_fifo()
 		switch (coltype) {
 		case 2:
 			if (offset_color_enable) {
-				float argb_float[4];
-
-				memcpy(argb_float, tafifo_buff + 8, 4 * sizeof(float));
-				base_color = float_argb_to_packed_argb(argb_float);
-
-				memcpy(argb_float, tafifo_buff + 12, 4 * sizeof(float));
-				offset_color = float_argb_to_packed_argb(argb_float);
+				memcpy(poly_base_color, tafifo_buff + 8, 4 * sizeof(float));
+				memcpy(poly_offs_color, tafifo_buff + 12, 4 * sizeof(float));
 			} else {
-				float argb_float[4];
-
-				memcpy(argb_float, tafifo_buff + 4, 4 * sizeof(float));
-				base_color = float_argb_to_packed_argb(argb_float);
-
-				offset_color = 0;
+				memcpy(poly_base_color, tafifo_buff + 4, 4 * sizeof(float));
+				memset(poly_offs_color, 0, sizeof(poly_offs_color));
 			}
-			last_mode_2_base_color = base_color;
+                        memcpy(poly_last_mode_2_base_color, poly_base_color, sizeof(poly_last_mode_2_base_color));
 			break;
 		case 3:
-			base_color = last_mode_2_base_color;
-			offset_color = 0;
+			memcpy(poly_base_color, poly_last_mode_2_base_color, sizeof(poly_base_color));
+			memset(poly_offs_color, 0, sizeof(poly_offs_color));
 			break;
 		default:
-			base_color = 0;
-			offset_color = 0;
+			memset(poly_base_color, 0, sizeof(poly_base_color));
+			memset(poly_offs_color, 0, sizeof(poly_offs_color));
 			break;
 		}
 	} else if (paratype == 5) {
-		base_color = tafifo_buff[4];
-		if (offset_color_enable)
-			offset_color = tafifo_buff[5];
-		else
-			offset_color = 0;
+		packed_argb_to_float_argb(poly_base_color, tafifo_buff[4]);
+		if (offset_color_enable) {
+			packed_argb_to_float_argb(poly_offs_color, tafifo_buff[5]);
+		} else {
+			memset(poly_offs_color, 0, sizeof(poly_offs_color));
+		}
 	}
 
 	// here we should generate the data for the various tiles
@@ -2044,8 +2043,10 @@ void powervr2_device::process_ta_fifo()
 
 						int idx;
 						for (idx = 0; idx < 4; idx++) {
-							tv[idx].base_color = base_color;
-							tv[idx].offset_color = offset_color;
+							memcpy(tv[idx].base_color, poly_base_color,
+							       sizeof(tv[idx].base_color));
+							memcpy(tv[idx].offset_color, poly_offs_color,
+							       sizeof(tv[idx].offset_color));
 						}
 
 						ts = &rd->strips[rd->strips_size++];
@@ -2066,29 +2067,24 @@ void powervr2_device::process_ta_fifo()
 				#endif
 				if (rd->verts_size <= 65530)
 				{
-					uint32_t vert_offset_color = 0;
-					uint32_t vert_base_color;
+					float vert_offset_color[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+					float vert_base_color[4];
 
-					int col_idx;
-					float argb_float[4];
 					float base_intensity, offs_intensity;
 
 					switch (coltype) {
 					case 0:
 						// packed color
-						vert_base_color = tafifo_buff[6];
+						packed_argb_to_float_argb(vert_base_color, tafifo_buff[6]);
 						break;
 					case 1:
 						// floating-point color
 						if (have_16_byte_header) {
-							memcpy(argb_float, tafifo_buff + 8, 4 * sizeof(float));
-							vert_base_color = float_argb_to_packed_argb(argb_float);
+							memcpy(vert_base_color, tafifo_buff + 8, 4 * sizeof(float));
 
-							memcpy(argb_float, tafifo_buff + 12, 4 * sizeof(float));
-							vert_offset_color = float_argb_to_packed_argb(argb_float);
+							memcpy(vert_offset_color, tafifo_buff + 12, 4 * sizeof(float));
 						} else {
-							memcpy(argb_float, tafifo_buff + 4, 4 * sizeof(float));
-							vert_base_color = float_argb_to_packed_argb(argb_float);
+							memcpy(vert_base_color, tafifo_buff + 4, 4 * sizeof(float));
 						}
 						break;
 					case 2:
@@ -2096,34 +2092,21 @@ void powervr2_device::process_ta_fifo()
 						// base/offset color
 						memcpy(&base_intensity, tafifo_buff + 6, sizeof(float));
 						memcpy(&offs_intensity, tafifo_buff + 7, sizeof(float));
-						vert_base_color = 0;
-						for (col_idx = 0; col_idx < 4; col_idx++) {
-							int shift = (3 - col_idx) * 8;
-							int col = (((base_color >> shift) & 0xff) / 255.0f) *
-								base_intensity * 255.0f;
-							if (col < 0)
-								col = 0;
-							if (col > 255)
-								col = 255;
-							vert_base_color |= col << shift;
-						}
+						vert_base_color[0] = poly_base_color[0] * base_intensity;
+						vert_base_color[1] = poly_base_color[1] * base_intensity;
+						vert_base_color[2] = poly_base_color[2] * base_intensity;
+						vert_base_color[3] = poly_base_color[3] * base_intensity;
 						if (offset_color_enable) {
-							for (col_idx = 0; col_idx < 4; col_idx++) {
-								int shift = (3 - col_idx) * 8;
-								int col = (((offset_color >> shift) & 0xff) / 255.0f) *
-									offs_intensity * 255.0f;
-								if (col < 0)
-									col = 0;
-								if (col > 255)
-									col = 255;
-								vert_offset_color |= col << shift;
-							}
+							vert_offset_color[0] = poly_offs_color[0] * offs_intensity;
+							vert_offset_color[1] = poly_offs_color[1] * offs_intensity;
+							vert_offset_color[2] = poly_offs_color[2] * offs_intensity;
+							vert_offset_color[3] = poly_offs_color[3] * offs_intensity;
 						}
 						break;
 					default:
 						// This will never actually happen, coltype is 2-bits.
 						logerror("line %d of %s - coltype is %d\n", coltype);
-						vert_base_color = 0;
+						memset(vert_base_color, 0, sizeof(vert_base_color));
 					}
 
 					/* add a vertex to our list */
@@ -2136,8 +2119,8 @@ void powervr2_device::process_ta_fifo()
 					tv->w=u2f(tafifo_buff[3]);
 					tv->u=u2f(tafifo_buff[4]);
 					tv->v=u2f(tafifo_buff[5]);
-					tv->base_color = vert_base_color;
-					tv->offset_color = vert_offset_color;
+					memcpy(tv->base_color, vert_base_color, sizeof(tv->base_color));
+					memcpy(tv->offset_color, vert_offset_color, sizeof(tv->offset_color));
 
 					if((!rd->strips_size) ||
 						rd->strips[rd->strips_size-1].evert != -1)
@@ -2592,45 +2575,27 @@ void powervr2_device::render_tri_sorted(bitmap_rgb32 &bitmap, texinfo *ti, const
 		return;
 
 	float base_v0[4] = {
-		((v0->base_color >> 24) & 0xff) / 256.0f,
-		((v0->base_color >> 16) & 0xff) / 256.0f,
-		((v0->base_color >> 8) & 0xff) / 256.0f,
-		(v0->base_color & 0xff) / 256.0f,
+		v0->base_color[0], v0->base_color[1], v0->base_color[2], v0->base_color[3]
 	};
 
 	float base_v1[4] = {
-		((v1->base_color >> 24) & 0xff) / 256.0f,
-		((v1->base_color >> 16) & 0xff) / 256.0f,
-		((v1->base_color >> 8) & 0xff) / 256.0f,
-		(v1->base_color & 0xff) / 256.0f,
+		v1->base_color[0], v1->base_color[1], v1->base_color[2], v1->base_color[3]
 	};
 
 	float base_v2[4] = {
-		((v2->base_color >> 24) & 0xff) / 256.0f,
-		((v2->base_color >> 16) & 0xff) / 256.0f,
-		((v2->base_color >> 8) & 0xff) / 256.0f,
-		(v2->base_color & 0xff) / 256.0f,
+		v2->base_color[0], v2->base_color[1], v2->base_color[2], v2->base_color[3]
 	};
 
 	float offset_v0[4] = {
-		((v0->offset_color >> 24) & 0xff) / 256.0f,
-		((v0->offset_color >> 16) & 0xff) / 256.0f,
-		((v0->offset_color >> 8) & 0xff) / 256.0f,
-		(v0->offset_color & 0xff) / 256.0f,
+		v0->offset_color[0], v0->offset_color[1], v0->offset_color[2], v0->offset_color[3]
 	};
 
 	float offset_v1[4] = {
-		((v1->offset_color >> 24) & 0xff) / 256.0f,
-		((v1->offset_color >> 16) & 0xff) / 256.0f,
-		((v1->offset_color >> 8) & 0xff) / 256.0f,
-		(v1->offset_color & 0xff) / 256.0f,
+		v1->offset_color[0], v1->offset_color[1], v1->offset_color[2], v1->offset_color[3]
 	};
 
 	float offset_v2[4] = {
-		((v2->offset_color >> 24) & 0xff) / 256.0f,
-		((v2->offset_color >> 16) & 0xff) / 256.0f,
-		((v2->offset_color >> 8) & 0xff) / 256.0f,
-		(v2->offset_color & 0xff) / 256.0f,
+		v2->offset_color[0], v2->offset_color[1], v2->offset_color[2], v2->offset_color[3]
 	};
 
 	float db01[4] = {
